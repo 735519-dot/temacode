@@ -23,7 +23,7 @@ def save_history():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(st.session_state.history, f, ensure_ascii=False, indent=2)
 
-# ==================== 导入历史TXT（主页面大区域） ====================
+# ==================== 导入历史TXT ====================
 st.subheader("📥 导入历史TXT")
 uploaded_file = st.file_uploader("选择你的历史数据TXT文件", type=["txt"], key="uploader")
 if uploaded_file is not None:
@@ -54,14 +54,14 @@ if uploaded_file is not None:
         if added:
             st.session_state.history.extend(added)
             save_history()
-            st.success(f"✅ 成功导入 {len(added)} 条记录！页面正在刷新...")
-            st.rerun()   # 关键修复：上传后立即刷新
+            st.success(f"✅ 成功导入 {len(added)} 条记录！")
+            st.rerun()
 
-# ==================== 策略选择（切换后立即刷新） ====================
+# ==================== 策略选择 ====================
 strategy = st.selectbox("选择投注策略", [
     "近4期500","近5期500","近6期500","近7期500","近8期500","近9期500",
     "近4期200","近5期200","近6期200","近7期200","近8期200","近9期200"
-], on_change=st.rerun)   # 切换策略立即刷新
+])
 
 n = int(strategy.split('近')[1].split('期')[0])
 bet_low = 500 if '500' in strategy else 200
@@ -92,11 +92,12 @@ def analyze_next(history, strategy_n):
     high_zone = sorted(all_nums - zero_zone - set(low_zone))
     return sorted(zero_zone), low_zone, high_zone
 
-# 主表格 + 所有计算
+# ==================== 主表格（严格排序） ====================
 if st.session_state.history:
     df_data = []
     cum_rebate = cum_profit = 0.0
     all_profits = []
+    # 严格按日期排序
     sorted_history = sorted(st.session_state.history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"))
     
     for i, row in enumerate(sorted_history):
@@ -160,9 +161,9 @@ with st.expander("🚀 查看下一期智能分区", expanded=True):
             st.metric(high_name, f"{len(high)} 个")
             st.write(" | ".join(f"{n:02d}" for n in high) or "无")
     else:
-        st.info("请先导入历史数据或添加记录")
+        st.info("请先导入数据或添加记录")
 
-# 侧边栏手动添加
+# ==================== 侧边栏 ====================
 with st.sidebar:
     st.header("✍️ 手动添加新期")
     col1, col2 = st.columns(2)
@@ -180,5 +181,13 @@ with st.sidebar:
         save_history()
         st.success("添加成功！")
         st.rerun()
+
+    st.divider()
+    if st.button("🗑️ 一键清除所有历史数据", type="secondary"):
+        if st.checkbox("我确定要删除所有数据（不可恢复）"):
+            st.session_state.history = []
+            save_history()
+            st.success("✅ 已清除所有历史数据！")
+            st.rerun()
 
 st.caption("数据自动保存在 lottery_history.json · 可添加到主屏幕使用")
