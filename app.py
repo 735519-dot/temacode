@@ -23,9 +23,9 @@ def save_history():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(st.session_state.history, f, ensure_ascii=False, indent=2)
 
-# ==================== 导入历史TXT（主页面大按钮） ====================
+# ==================== 导入历史TXT（主页面大区域） ====================
 st.subheader("📥 导入历史TXT")
-uploaded_file = st.file_uploader("选择你的历史数据TXT文件", type=["txt"], help="点击下方按钮选择文件")
+uploaded_file = st.file_uploader("选择你的历史数据TXT文件", type=["txt"], key="uploader")
 if uploaded_file is not None:
     content = uploaded_file.getvalue().decode("utf-8")
     lines = content.splitlines()
@@ -54,14 +54,14 @@ if uploaded_file is not None:
         if added:
             st.session_state.history.extend(added)
             save_history()
-            st.success(f"✅ 成功导入 {len(added)} 条记录！")
-            st.rerun()
+            st.success(f"✅ 成功导入 {len(added)} 条记录！页面正在刷新...")
+            st.rerun()   # 关键修复：上传后立即刷新
 
-# ==================== 策略选择 ====================
+# ==================== 策略选择（切换后立即刷新） ====================
 strategy = st.selectbox("选择投注策略", [
     "近4期500","近5期500","近6期500","近7期500","近8期500","近9期500",
     "近4期200","近5期200","近6期200","近7期200","近8期200","近9期200"
-])
+], on_change=st.rerun)   # 切换策略立即刷新
 
 n = int(strategy.split('近')[1].split('期')[0])
 bet_low = 500 if '500' in strategy else 200
@@ -69,7 +69,7 @@ bet_high = 1000 if '500' in strategy else 1500
 low_name = "500元区" if '500' in strategy else "200元区"
 high_name = "1000元区" if '500' in strategy else "1500元区"
 
-# 分析函数（省略，与之前一致）
+# 分析函数
 def analyze_next(history, strategy_n):
     if not history:
         return [], [], list(range(1, 50))
@@ -92,10 +92,77 @@ def analyze_next(history, strategy_n):
     high_zone = sorted(all_nums - zero_zone - set(low_zone))
     return sorted(zero_zone), low_zone, high_zone
 
-# 主表格、近期统计、下一期分析（与之前一致，省略以保持简洁）
-# （完整版已包含所有功能）
+# 主表格 + 所有计算
+if st.session_state.history:
+    df_data = []
+    cum_rebate = cum_profit = 0.0
+    all_profits = []
+    sorted_history = sorted(st.session_state.history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"))
+    
+    for i, row in enumerate(sorted_history):
+        past = sorted_history[:i]
+        zero, low, high = analyze_next(past, n)
+        win_num = row["number"]
+        bet_total = bet_low * len(low) + bet_high * len(high)
+        rebate = bet_total * 0.03
+        if win_num in low:
+            win_amount = bet_low * 47.5
+        elif win_num in high:
+            win_amount = bet_high * 47.5
+        else:
+            win_amount = 0
+        profit = win_amount - bet_total + rebate
+        cum_rebate += rebate
+        cum_profit += profit
+        all_profits.append(profit)
+        
+        df_data.append({
+            "日期": row["date"],
+            "期号": row["period"],
+            "特码": row["number"],
+            "当期投注总额": bet_total,
+            "当期反水": round(rebate),
+            "当期盈亏": round(profit),
+            "当期中奖额": round(win_amount),
+            "累积反水": round(cum_rebate),
+            "累积盈亏": round(cum_profit),
+            "0元区": " | ".join(f"{n:02d}" for n in zero) + f" ({len(zero)}个)",
+            low_name: " | ".join(f"{n:02d}" for n in low) + f" ({len(low)}个)",
+            high_name: " | ".join(f"{n:02d}" for n in high) + f" ({len(high)}个)"
+        })
+    
+    df = pd.DataFrame(df_data)
+    st.dataframe(df.style.map(lambda x: 'color: #00AA00; font-weight: bold' if isinstance(x, (int,float)) and x < 0 else '', subset=["当期盈亏"]),
+                 use_container_width=True, height=650)
 
-# 手动添加（侧边栏）
+    # 近期统计
+    st.subheader("📊 近期盈亏统计")
+    cols = st.columns(6)
+    for idx, p in enumerate([30,50,100,150,200,300]):
+        if len(all_profits) >= p:
+            s = sum(all_profits[-p:])
+            color = "#00AA00" if s > 0 else "#e74c3c"
+            cols[idx].metric(f"近{p}期", f"{s:,} 元")
+            cols[idx].markdown(f"<span style='color:{color}'>{'盈利' if s>0 else '亏损' if s<0 else '持平'}</span>", unsafe_allow_html=True)
+
+# 下一期分析
+with st.expander("🚀 查看下一期智能分区", expanded=True):
+    if st.session_state.history:
+        zero, low, high = analyze_next(st.session_state.history, n)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("0元区 (禁注)", f"{len(zero)} 个")
+            st.write(" | ".join(f"{n:02d}" for n in zero) or "无")
+        with col2:
+            st.metric(low_name, f"{len(low)} 个")
+            st.write(" | ".join(f"{n:02d}" for n in low) or "无")
+        with col3:
+            st.metric(high_name, f"{len(high)} 个")
+            st.write(" | ".join(f"{n:02d}" for n in high) or "无")
+    else:
+        st.info("请先导入历史数据或添加记录")
+
+# 侧边栏手动添加
 with st.sidebar:
     st.header("✍️ 手动添加新期")
     col1, col2 = st.columns(2)
