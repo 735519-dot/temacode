@@ -23,7 +23,7 @@ def save_history():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(st.session_state.history, f, ensure_ascii=False, indent=2)
 
-# ==================== 导入历史TXT ====================
+# ==================== 导入历史TXT（主页面大区域） ====================
 st.subheader("📥 导入历史TXT")
 uploaded_file = st.file_uploader("选择你的历史数据TXT文件", type=["txt"], key="uploader")
 if uploaded_file is not None:
@@ -92,16 +92,16 @@ def analyze_next(history, strategy_n):
     high_zone = sorted(all_nums - zero_zone - set(low_zone))
     return sorted(zero_zone), low_zone, high_zone
 
-# ==================== 主表格（严格排序） ====================
+# ==================== 主表格（严格日期降序 + 明确列顺序） ====================
 if st.session_state.history:
     df_data = []
     cum_rebate = cum_profit = 0.0
     all_profits = []
-    # 严格按日期排序
-    sorted_history = sorted(st.session_state.history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"))
+    # 严格按日期降序（最新在上）
+    sorted_history = sorted(st.session_state.history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"), reverse=True)
     
     for i, row in enumerate(sorted_history):
-        past = sorted_history[:i]
+        past = sorted_history[i+1:]  # 上一期及以前
         zero, low, high = analyze_next(past, n)
         win_num = row["number"]
         bet_total = bet_low * len(low) + bet_high * len(high)
@@ -132,7 +132,10 @@ if st.session_state.history:
             high_name: " | ".join(f"{n:02d}" for n in high) + f" ({len(high)}个)"
         })
     
-    df = pd.DataFrame(df_data)
+    # 明确列顺序（防止混乱）
+    columns_order = ["日期", "期号", "特码", "当期投注总额", "当期反水", "当期盈亏", "当期中奖额", "累积反水", "累积盈亏", "0元区", low_name, high_name]
+    df = pd.DataFrame(df_data, columns=columns_order)
+    
     st.dataframe(df.style.map(lambda x: 'color: #00AA00; font-weight: bold' if isinstance(x, (int,float)) and x < 0 else '', subset=["当期盈亏"]),
                  use_container_width=True, height=650)
 
@@ -163,7 +166,7 @@ with st.expander("🚀 查看下一期智能分区", expanded=True):
     else:
         st.info("请先导入数据或添加记录")
 
-# ==================== 侧边栏 ====================
+# 侧边栏手动添加 + 一键清除
 with st.sidebar:
     st.header("✍️ 手动添加新期")
     col1, col2 = st.columns(2)
@@ -183,7 +186,7 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
-    if st.button("🗑️ 一键清除所有历史数据", type="secondary"):
+    if st.button("🗑️ **一键清除所有历史数据**", type="secondary"):
         if st.checkbox("我确定要删除所有数据（不可恢复）"):
             st.session_state.history = []
             save_history()
