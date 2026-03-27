@@ -17,10 +17,14 @@ if "history" not in st.session_state:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f)
             # 只保留有效日期记录，防止崩溃
-            st.session_state.history = [
-                r for r in raw 
-                if isinstance(r.get("date"), str) and len(r["date"]) >= 8
-            ]
+            st.session_state.history = []
+            for r in raw:
+                try:
+                    if isinstance(r.get("date"), str) and len(r["date"]) >= 8:
+                        datetime.strptime(r["date"], "%Y-%m-%d")
+                        st.session_state.history.append(r)
+                except:
+                    pass  # 跳过坏记录
     else:
         st.session_state.history = []
 
@@ -179,7 +183,7 @@ with st.expander("🚀 查看下一期智能分区", expanded=True):
     else:
         st.info("请先导入数据或添加记录")
 
-# 侧边栏手动添加 + 一键清除（已确保始终显示）
+# 侧边栏手动添加 + 一键清除
 with st.sidebar:
     st.header("✍️ 手动添加新期")
     col1, col2 = st.columns(2)
