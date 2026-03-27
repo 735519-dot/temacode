@@ -97,7 +97,7 @@ if st.session_state.history:
     df_data = []
     cum_rebate = cum_profit = 0.0
     all_profits = []
-    # 升序排序（最早日期在上，最新日期在最下方）
+    # 升序排序（最早日期在上，最新的日期在最下方）
     sorted_history = sorted(st.session_state.history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"))
     
     for i, row in enumerate(sorted_history):
@@ -133,15 +133,7 @@ if st.session_state.history:
         })
     
     df = pd.DataFrame(df_data)
-
-    # ==================== 新增：表头显示设置 ====================
-    st.subheader("📋 表头显示设置")
-    all_cols = list(df.columns)
-    selected_cols = st.multiselect("选择要显示的列（可多选）", options=all_cols, default=all_cols, key="col_select")
-    
-    display_df = df[selected_cols]
-    
-    st.dataframe(display_df.style.map(lambda x: 'color: #00AA00; font-weight: bold' if isinstance(x, (int,float)) and x < 0 else '', subset=["当期盈亏"]),
+    st.dataframe(df.style.map(lambda x: 'color: #00AA00; font-weight: bold' if isinstance(x, (int,float)) and x < 0 else '', subset=["当期盈亏"]),
                  use_container_width=True, height=650)
 
     # 近期统计
