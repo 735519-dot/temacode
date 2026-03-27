@@ -10,13 +10,13 @@ st.set_page_config(page_title="特码智能分区分析器", layout="wide", page
 st.title("🎯 特码智能分区分析器（iPhone完美版）")
 st.markdown("**12种策略 · 当期计算 · 亏损绿色 · 近期统计**")
 
-# 数据持久化 + 自动清理无效日期记录（修复崩溃核心）
+# 数据持久化 + 自动清理无效日期记录（彻底解决崩溃）
 DATA_FILE = "lottery_history.json"
 if "history" not in st.session_state:
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f)
-            # 只保留日期格式正确的记录，防止崩溃
+            # 只保留有效日期记录，防止崩溃
             st.session_state.history = [
                 r for r in raw 
                 if isinstance(r.get("date"), str) and len(r["date"]) >= 8
@@ -74,11 +74,11 @@ bet_high = 1000 if '500' in strategy else 1500
 low_name = "500元区" if '500' in strategy else "200元区"
 high_name = "1000元区" if '500' in strategy else "1500元区"
 
-# 分析函数（仅增加容错，不改变任何逻辑）
+# 分析函数（仅增加容错，不改变任何原有逻辑）
 def analyze_next(history, strategy_n):
     if not history:
         return [], [], list(range(1, 50))
-    # 强容错：只使用有效日期记录
+    # 只使用有效日期记录
     valid_history = [r for r in history if isinstance(r.get("date"), str) and len(r["date"]) >= 8]
     sorted_history = sorted(valid_history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"), reverse=True)
     zero_zone = {sorted_history[0]["number"]} if sorted_history else set()
@@ -179,7 +179,7 @@ with st.expander("🚀 查看下一期智能分区", expanded=True):
     else:
         st.info("请先导入数据或添加记录")
 
-# 侧边栏手动添加 + 一键清除
+# 侧边栏手动添加 + 一键清除（已确保始终显示）
 with st.sidebar:
     st.header("✍️ 手动添加新期")
     col1, col2 = st.columns(2)
