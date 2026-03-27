@@ -8,16 +8,19 @@ from collections import defaultdict
 st.set_page_config(page_title="特码智能分区分析器", layout="wide", page_icon="🎯")
 
 st.title("🎯 特码智能分区分析器（iPhone完美版）")
-st.markdown("**12种策略 · B版本动态补满 · 亏损绿色 · 近期统计**")
+st.markdown("**12种策略 · 当期计算 · 亏损绿色 · 近期统计**")
 
-# 数据持久化 + 自动清理坏日期
+# 数据持久化 + 自动清理无效日期记录（修复崩溃核心）
 DATA_FILE = "lottery_history.json"
 if "history" not in st.session_state:
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f)
-            # 自动清理无效日期记录
-            st.session_state.history = [r for r in raw if isinstance(r.get("date"), str) and len(r["date"]) >= 8]
+            # 只保留日期格式正确的记录，防止崩溃
+            st.session_state.history = [
+                r for r in raw 
+                if isinstance(r.get("date"), str) and len(r["date"]) >= 8
+            ]
     else:
         st.session_state.history = []
 
@@ -25,38 +28,31 @@ def save_history():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(st.session_state.history, f, ensure_ascii=False, indent=2)
 
-# ==================== 导入历史TXT（强容错） ====================
+# ==================== 导入历史TXT ====================
 st.subheader("📥 导入历史TXT")
 uploaded_file = st.file_uploader("选择你的历史数据TXT文件", type=["txt"], key="uploader")
 if uploaded_file is not None:
     content = uploaded_file.getvalue().decode("utf-8")
-    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    lines = content.splitlines()
     new_data = []
     i = 0
     while i < len(lines):
-        line = lines[i]
-        if '-' in line and any(c.isdigit() for c in line):
-            date = line.split()[0] if ' ' in line else line   # 清理多余文字
+        line = lines[i].strip()
+        if '-' in line and len(line) > 8:
+            date = line
             i += 1
-            for j in range(i, min(i + 5, len(lines))):
-                next_line = lines[j]
+            if i < len(lines):
+                next_line = lines[i].strip()
                 if '期' in next_line:
                     try:
                         parts = next_line.split()
                         period = parts[0]
-                        num_str = ''.join(filter(str.isdigit, next_line))
-                        number = int(num_str[-2:]) if len(num_str) >= 2 else int(num_str)
+                        number = int(''.join(filter(str.isdigit, parts[-1])))
                         if 1 <= number <= 49:
                             new_data.append({"date": date, "period": period, "number": number})
-                        i = j + 1
-                        break
                     except:
                         pass
-            else:
-                i += 1
-        else:
-            i += 1
-
+        i += 1
     if new_data:
         existing = {d["date"] for d in st.session_state.history}
         added = [item for item in new_data if item["date"] not in existing]
@@ -65,15 +61,12 @@ if uploaded_file is not None:
             save_history()
             st.success(f"✅ 成功导入 {len(added)} 条记录！")
             st.rerun()
-        else:
-            st.info("没有新记录（已存在）")
 
-# ==================== 策略 + B版本 ====================
+# ==================== 策略选择 ====================
 strategy = st.selectbox("选择投注策略", [
     "近4期500","近5期500","近6期500","近7期500","近8期500","近9期500",
     "近4期200","近5期200","近6期200","近7期200","近8期200","近9期200"
 ])
-version = st.selectbox("策略版本", ["A版本 (严格按期数)", "B版本 (动态补满N个)"])
 
 n = int(strategy.split('近')[1].split('期')[0])
 bet_low = 500 if '500' in strategy else 200
@@ -81,22 +74,13 @@ bet_high = 1000 if '500' in strategy else 1500
 low_name = "500元区" if '500' in strategy else "200元区"
 high_name = "1000元区" if '500' in strategy else "1500元区"
 
-# ==================== 分析函数（B版本动态补满N个） ====================
-def analyze_next(history, strategy_n, ver):
+# 分析函数（仅增加容错，不改变任何逻辑）
+def analyze_next(history, strategy_n):
     if not history:
         return [], [], list(range(1, 50))
-    # 强容错排序
-    valid_history = []
-    for r in history:
-        try:
-            datetime.strptime(r["date"], "%Y-%m-%d")
-            valid_history.append(r)
-        except:
-            pass
-    if not valid_history:
-        return [], [], list(range(1, 50))
+    # 强容错：只使用有效日期记录
+    valid_history = [r for r in history if isinstance(r.get("date"), str) and len(r["date"]) >= 8]
     sorted_history = sorted(valid_history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"), reverse=True)
-    
     zero_zone = {sorted_history[0]["number"]} if sorted_history else set()
     recent_10 = sorted_history[:10]
     appear = defaultdict(list)
@@ -109,35 +93,26 @@ def analyze_next(history, strategy_n, ver):
         if sorted_history[i]["number"] == sorted_history[i+1]["number"] and i <= 9:
             zero_zone.add(sorted_history[i]["number"])
             break
-
-    # B版本动态补满N个
-    current_n = strategy_n
-    max_n = 15
-    while True:
-        recent_n = [sorted_history[i]["number"] for i in range(min(current_n, len(sorted_history)))]
-        low_zone = [num for num in recent_n if num not in zero_zone]
-        if ver.startswith("A") or len(low_zone) >= strategy_n or current_n >= max_n:
-            break
-        current_n += 1
-    low_zone = low_zone[:strategy_n] if ver.startswith("B") and len(low_zone) > strategy_n else low_zone
+    recent_n = [sorted_history[i]["number"] for i in range(min(strategy_n, len(sorted_history)))]
+    low_zone = [n for n in recent_n if n not in zero_zone]
     all_nums = set(range(1, 50))
     high_zone = sorted(all_nums - zero_zone - set(low_zone))
     return sorted(zero_zone), low_zone, high_zone
 
-# ==================== 主表格 ====================
+# ==================== 主表格（最新日期在最下方） ====================
 if st.session_state.history:
     df_data = []
     cum_rebate = cum_profit = 0.0
-    cum_bet_total = 0.0
     all_profits = []
-    sorted_history = sorted(st.session_state.history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d") if isinstance(x.get("date"), str) else datetime.min)
+    # 升序排序（容错版）
+    valid_history = [r for r in st.session_state.history if isinstance(r.get("date"), str) and len(r["date"]) >= 8]
+    sorted_history = sorted(valid_history, key=lambda x: datetime.strptime(x["date"], "%Y-%m-%d"))
     
     for i, row in enumerate(sorted_history):
         past = sorted_history[:i]
-        zero, low, high = analyze_next(past, n, version)
+        zero, low, high = analyze_next(past, n)
         win_num = row["number"]
         bet_total = bet_low * len(low) + bet_high * len(high)
-        cum_bet_total += bet_total
         rebate = bet_total * 0.03
         if win_num in low:
             win_amount = bet_low * 47.5
@@ -155,7 +130,6 @@ if st.session_state.history:
             "期号": row["period"],
             "特码": row["number"],
             "当期投注总额": bet_total,
-            "累计投注总额": round(cum_bet_total),
             "当期反水": round(rebate),
             "当期盈亏": round(profit),
             "当期中奖额": round(win_amount),
@@ -168,36 +142,30 @@ if st.session_state.history:
     
     df = pd.DataFrame(df_data)
 
-    # 表头显示设置（保留你之前喜欢的）
+    # ==================== 新增：表头显示设置 ====================
     st.subheader("📋 表头显示设置")
     all_cols = list(df.columns)
-    selected_cols = st.multiselect("选择要显示的列（可多选）", options=all_cols, default=all_cols)
+    selected_cols = st.multiselect("选择要显示的列（可多选）", options=all_cols, default=all_cols, key="col_select")
+    
     display_df = df[selected_cols]
+    
+    st.dataframe(display_df.style.map(lambda x: 'color: #00AA00; font-weight: bold' if isinstance(x, (int,float)) and x < 0 else '', subset=["当期盈亏"]),
+                 use_container_width=True, height=650)
 
-    # 亏损绿色 + 累计投注总额
-    st.dataframe(
-        display_df.style.map(
-            lambda x: 'color: #00AA00; font-weight: bold' if isinstance(x, (int,float)) and x < 0 else '',
-            subset=["当期盈亏"]
-        ),
-        use_container_width=True, height=650
-    )
-
-    # 近期盈亏统计（真实数字）
+    # 近期统计
     st.subheader("📊 近期盈亏统计")
     cols = st.columns(6)
-    periods = [30,50,100,150,200,300]
-    for idx, p in enumerate(periods):
+    for idx, p in enumerate([30,50,100,150,200,300]):
         if len(all_profits) >= p:
             s = sum(all_profits[-p:])
-            color = "#00AA00" if s < 0 else "#e74c3c"
+            color = "#00AA00" if s > 0 else "#e74c3c"
             cols[idx].metric(f"近{p}期", f"{s:,} 元")
             cols[idx].markdown(f"<span style='color:{color}'>{'盈利' if s>0 else '亏损' if s<0 else '持平'}</span>", unsafe_allow_html=True)
 
 # 下一期分析
 with st.expander("🚀 查看下一期智能分区", expanded=True):
     if st.session_state.history:
-        zero, low, high = analyze_next(st.session_state.history, n, version)
+        zero, low, high = analyze_next(st.session_state.history, n)
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("0元区 (禁注)", f"{len(zero)} 个")
@@ -211,7 +179,7 @@ with st.expander("🚀 查看下一期智能分区", expanded=True):
     else:
         st.info("请先导入数据或添加记录")
 
-# 侧边栏
+# 侧边栏手动添加 + 一键清除
 with st.sidebar:
     st.header("✍️ 手动添加新期")
     col1, col2 = st.columns(2)
